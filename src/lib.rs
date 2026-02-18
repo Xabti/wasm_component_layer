@@ -1,4 +1,5 @@
 #![deny(warnings)]
+#![allow(mismatched_lifetime_syntaxes)]
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 #![warn(clippy::missing_docs_in_private_items)]
@@ -184,7 +185,7 @@ impl Component {
             modules.insert(
                 id,
                 ModuleTranslation {
-                    module: Module::new(engine, std::io::Cursor::new(module.wasm))?,
+                    module: Module::new(engine, module.wasm)?,
                     translation: module.module,
                 },
             );
@@ -1216,7 +1217,7 @@ impl Instance {
     /// Drops the instance and all of its owned resources, removing its data from the given store.
     /// Returns the list of errors that occurred while dropping owned resources, but continues
     /// until all resources have been dropped.
-    pub fn drop<T, E: backend::WasmEngine>(&self, ctx: &mut Store<T, E>) -> Result<Vec<Error>> {
+    pub fn drop<T: 'static, E: backend::WasmEngine>(&self, ctx: &mut Store<T, E>) -> Result<Vec<Error>> {
         ensure!(self.0.store_id == ctx.inner.data().id, "Incorrect store.");
         self.0.state_table.dropped.store(true, Ordering::Release);
 
@@ -1966,12 +1967,12 @@ struct ComponentExport {
 /// the Wasm bytes into a valid module artifact).
 ///
 /// Spec: <https://webassembly.github.io/spec/core/exec/runtime.html#store>
-pub struct Store<T, E: backend::WasmEngine> {
+pub struct Store<T: 'static, E: backend::WasmEngine> {
     /// The backing implementation.
     inner: wasm_runtime_layer::Store<StoreInner<T, E>, E>,
 }
 
-impl<T, E: backend::WasmEngine> Store<T, E> {
+impl<T: 'static, E: backend::WasmEngine> Store<T, E> {
     /// Creates a new [`Store`] with a specific [`Engine`].
     pub fn new(engine: &Engine<E>, data: T) -> Self {
         /// A counter that uniquely identifies stores.
@@ -2030,12 +2031,12 @@ impl<T, E: backend::WasmEngine> Store<T, E> {
 ///
 /// This type is suitable for [`AsContext`] trait bounds on methods if desired.
 /// For more information, see [`Store`].
-pub struct StoreContext<'a, T: 'a, E: backend::WasmEngine> {
+pub struct StoreContext<'a, T: 'a + 'static, E: backend::WasmEngine> {
     /// The backing implementation.
     inner: wasm_runtime_layer::StoreContext<'a, StoreInner<T, E>, E>,
 }
 
-impl<'a, T: 'a, E: backend::WasmEngine> StoreContext<'a, T, E> {
+impl<'a, T: 'a + 'static, E: backend::WasmEngine> StoreContext<'a, T, E> {
     /// Returns the underlying [`Engine`] this store is connected to.
     pub fn engine(&self) -> &Engine<E> {
         self.inner.engine()
@@ -2053,12 +2054,12 @@ impl<'a, T: 'a, E: backend::WasmEngine> StoreContext<'a, T, E> {
 ///
 /// This type is suitable for [`AsContextMut`] or [`AsContext`] trait bounds on methods if desired.
 /// For more information, see [`Store`].
-pub struct StoreContextMut<'a, T: 'a, E: backend::WasmEngine> {
+pub struct StoreContextMut<'a, T: 'a + 'static, E: backend::WasmEngine> {
     /// The backing implementation.
     inner: wasm_runtime_layer::StoreContextMut<'a, StoreInner<T, E>, E>,
 }
 
-impl<'a, T: 'a, E: backend::WasmEngine> StoreContextMut<'a, T, E> {
+impl<'a, T: 'a + 'static, E: backend::WasmEngine> StoreContextMut<'a, T, E> {
     /// Returns the underlying [`Engine`] this store is connected to.
     pub fn engine(&self) -> &Engine<E> {
         self.inner.engine()
@@ -2085,7 +2086,7 @@ pub trait AsContext {
     type Engine: backend::WasmEngine;
 
     /// The user state associated with the [`Store`], aka the `T` in `Store<T>`.
-    type UserState;
+    type UserState: 'static;
 
     /// Returns the store context that this type provides access to.
     fn as_context(&self) -> StoreContext<Self::UserState, Self::Engine>;
@@ -2097,7 +2098,7 @@ pub trait AsContextMut: AsContext {
     fn as_context_mut(&mut self) -> StoreContextMut<Self::UserState, Self::Engine>;
 }
 
-impl<T, E: backend::WasmEngine> AsContext for Store<T, E> {
+impl<T: 'static, E: backend::WasmEngine> AsContext for Store<T, E> {
     type Engine = E;
 
     type UserState = T;
@@ -2109,7 +2110,7 @@ impl<T, E: backend::WasmEngine> AsContext for Store<T, E> {
     }
 }
 
-impl<T, E: backend::WasmEngine> AsContextMut for Store<T, E> {
+impl<T: 'static, E: backend::WasmEngine> AsContextMut for Store<T, E> {
     fn as_context_mut(&mut self) -> StoreContextMut<Self::UserState, Self::Engine> {
         StoreContextMut {
             inner: wasm_runtime_layer::AsContextMut::as_context_mut(&mut self.inner),
@@ -2143,7 +2144,7 @@ impl<T: AsContextMut> AsContextMut for &mut T {
     }
 }
 
-impl<'a, T: 'a, E: backend::WasmEngine> AsContext for StoreContext<'a, T, E> {
+impl<'a, T: 'a + 'static, E: backend::WasmEngine> AsContext for StoreContext<'a, T, E> {
     type Engine = E;
 
     type UserState = T;
@@ -2155,7 +2156,7 @@ impl<'a, T: 'a, E: backend::WasmEngine> AsContext for StoreContext<'a, T, E> {
     }
 }
 
-impl<'a, T: 'a, E: backend::WasmEngine> AsContext for StoreContextMut<'a, T, E> {
+impl<'a, T: 'a + 'static, E: backend::WasmEngine> AsContext for StoreContextMut<'a, T, E> {
     type Engine = E;
 
     type UserState = T;
@@ -2167,7 +2168,7 @@ impl<'a, T: 'a, E: backend::WasmEngine> AsContext for StoreContextMut<'a, T, E> 
     }
 }
 
-impl<'a, T: 'a, E: backend::WasmEngine> AsContextMut for StoreContextMut<'a, T, E> {
+impl<'a, T: 'a + 'static, E: backend::WasmEngine> AsContextMut for StoreContextMut<'a, T, E> {
     fn as_context_mut(&mut self) -> StoreContextMut<Self::UserState, Self::Engine> {
         StoreContextMut {
             inner: wasm_runtime_layer::AsContextMut::as_context_mut(&mut self.inner),
@@ -2176,7 +2177,7 @@ impl<'a, T: 'a, E: backend::WasmEngine> AsContextMut for StoreContextMut<'a, T, 
 }
 
 /// Holds the inner mutable state for a component model implementation.
-struct StoreInner<T, E: backend::WasmEngine> {
+struct StoreInner<T: 'static, E: backend::WasmEngine> {
     /// The unique ID of this store.
     pub id: u64,
     /// The consumer's custom data.
